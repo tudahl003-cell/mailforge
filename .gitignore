@@ -1,0 +1,6 @@
+data/
+*.sqlite
+*.sqlite-*
+*.log
+.DS_Store
+.phpunit*
