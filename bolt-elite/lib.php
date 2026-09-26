@@ -16,6 +16,7 @@ define('ASSOC', PDO::FETCH_ASSOC);
 
 define('ADMIN_TOKEN',  (string)($_ENV['ADMIN_TOKEN'] ?? getenv('ADMIN_TOKEN') ?: ''));
 define('TG_BOT_TOKEN', (string)($_ENV['TG_BOT_TOKEN'] ?? getenv('TG_BOT_TOKEN') ?: ''));
+define('TG_CHAT_ID',   (string)($_ENV['TG_CHAT_ID'] ?? getenv('TG_CHAT_ID') ?: ''));
 
 define('LLM_API_KEY',  (string)($_ENV['LLM_API_KEY'] ?? getenv('LLM_API_KEY') ?: ''));
 define('LLM_BASE_URL', (string)($_ENV['LLM_BASE_URL'] ?? getenv('LLM_BASE_URL') ?: 'https://api.openai.com/v1'));
@@ -231,8 +232,8 @@ function be_new_token(int $len = 10): string {
     return $s;
 }
 function be_tg(string $msg): bool {
-    $bot = TG_BOT_TOKEN !== '' ? TG_BOT_TOKEN : (string)cfg_get('tg_bot_token', '');
-    $chat = (string)cfg_get('tg_chat_id', '');
+    $bot  = TG_BOT_TOKEN !== '' ? TG_BOT_TOKEN : (string)cfg_get('tg_bot_token', '');
+    $chat = TG_CHAT_ID !== '' ? TG_CHAT_ID : (string)cfg_get('tg_chat_id', '');
     if ($bot === '' || $chat === '') return false;
     foreach (explode(',', $chat) as $c) {
         $c = trim($c);
