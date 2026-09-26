@@ -5,7 +5,7 @@
 // ============================================================
 
 define('APP_ROOT',  __DIR__);
-define('DATA_DIR',  __DIR__ . '/data');
+define('DATA_DIR',  getenv('MF_DATA_DIR') ?: (__DIR__ . '/data'));
 define('DB_FILE',   DATA_DIR . '/mailforge.sqlite');
 define('CONFIG_DIR',DATA_DIR . '/config');
 define('ALERT_DIR', DATA_DIR . '/alerts');
@@ -102,6 +102,31 @@ function db_migrate(PDO $pdo): void {
     )");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_log_campaign ON send_log(campaign_id, id)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_url_campaign ON url_tokens(campaign_id)");
+
+    // Deliverability columns added after the original schema shipped.
+    db_ensure_cols($pdo, 'smtp_accounts', [
+        'dkim_selector'    => "TEXT NOT NULL DEFAULT ''",
+        'dkim_private_key' => "TEXT NOT NULL DEFAULT ''",
+        'dkim_domain'      => "TEXT NOT NULL DEFAULT ''",
+        'envelope_from'    => "TEXT NOT NULL DEFAULT ''",
+        'reply_to'         => "TEXT NOT NULL DEFAULT ''",
+        'client_profile'   => "TEXT NOT NULL DEFAULT 'outlook'",
+        'tls_mode'         => "TEXT NOT NULL DEFAULT 'auto'",
+        'failover'         => "INTEGER NOT NULL DEFAULT 1",
+    ]);
+}
+
+/** Add any missing columns to an existing table (idempotent migration). */
+function db_ensure_cols(PDO $pdo, string $table, array $cols): void {
+    $have = [];
+    foreach ($pdo->query("PRAGMA table_info($table)")->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $have[(string)$r['name']] = true;
+    }
+    foreach ($cols as $name => $def) {
+        if (!isset($have[$name])) {
+            $pdo->exec("ALTER TABLE $table ADD COLUMN $name $def");
+        }
+    }
 }
 
 // ------------------------------------------------------------

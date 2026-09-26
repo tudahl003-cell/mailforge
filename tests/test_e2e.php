@@ -8,6 +8,8 @@
 //   5) run_campaign end-to-end (validate + rotate 2 accounts + links)
 error_reporting(E_ALL & ~E_DEPRECATED);
 putenv('ADMIN_TOKEN=test-secret');
+// Isolate from ./data so repeated runs don't accumulate daily counters.
+putenv('MF_DATA_DIR=' . sys_get_temp_dir() . '/mf_e2e_' . bin2hex(random_bytes(4)));
 define('MF_TEST', 1);
 require_once __DIR__ . '/../lib.php';
 require_once __DIR__ . '/../include/validate.php';

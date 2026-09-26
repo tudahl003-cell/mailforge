@@ -384,13 +384,15 @@ function renderSmtp() {
     <div id="smtpList"></div>`;
   if (!rows.length) { $('#smtpList').innerHTML = `<div class="card dim">No SMTP accounts. Add at least one to send.</div>`; return; }
   $('#smtpList').innerHTML = `<div class="tablewrap"><table><thead><tr>
-    <th>name</th><th>host:port</th><th>from</th><th>tls</th><th>quota/day</th><th>sent today</th><th>status</th><th>last error</th><th></th>
+    <th>name</th><th>host:port</th><th>from</th><th>tls</th><th>profile</th><th>dkim</th><th>quota/day</th><th>sent today</th><th>status</th><th>last error</th><th></th>
   </tr></thead><tbody>
   ${rows.map(a => `<tr>
     <td>${esc(a.name) || '<span class="dim">—</span>'}</td>
     <td class="mono small">${esc(a.host)}:${a.port}</td>
     <td class="mono small">${esc(a.from_addr)}</td>
-    <td class="dim">${a.use_tls ? 'on' : 'off'}</td>
+    <td class="dim small">${esc(a.tls_mode || (a.use_tls ? 'auto' : 'none'))}</td>
+    <td class="dim small">${esc(a.client_profile || 'outlook')}</td>
+    <td>${a.dkim_ready ? badge('signed') : (a.has_dkim ? badge('incomplete', 'off') : '<span class="dim small">none</span>')}</td>
     <td class="dim">${a.daily_quota}</td>
     <td class="dim">${a.sent_today ?? 0}</td>
     <td>${a.active ? badge('active') : badge('draft', 'off')}</td>
@@ -403,6 +405,7 @@ function renderSmtp() {
   </tr>`).join('')}
   </tbody></table></div>`;
   window.smtpNew = smtpNew; window.smtpEdit = smtpEdit; window.smtpTest = smtpTest; window.smtpDel = smtpDel;
+  window.smtpDkimGen = smtpDkimGen; window.smtpDkimDns = smtpDkimDns;
 }
 function smtpForm(a) {
   const isEdit = a && a.id;
@@ -425,9 +428,41 @@ function smtpForm(a) {
       </div>
       <div class="row">
         <div class="field"><label>daily quota</label><input type="number" id="s_quota" value="${a?.daily_quota || 500}" min="0"></div>
-        <div class="field"><label>tls</label><select id="s_tls"><option value="1" ${a?.use_tls ? 'selected' : ''}>STARTTLS on</option><option value="0" ${!a?.use_tls ? 'selected' : ''}>off</option></select></div>
+        <div class="field grow"><label>tls mode</label><select id="s_tlsmode">
+          ${['auto','starttls','implicit','none'].map(m => `<option value="${m}" ${(a?.tls_mode || 'auto') === m ? 'selected' : ''}>${m}</option>`).join('')}
+        </select></div>
         <div class="field"><label>active</label><select id="s_active"><option value="1" ${a?.active !== 0 ? 'selected' : ''}>yes</option><option value="0" ${a?.active === 0 ? 'selected' : ''}>no</option></select></div>
       </div>
+      <div class="row">
+        <div class="field grow"><label>client profile (header fingerprint)</label><select id="s_profile">
+          ${['outlook','apple','gmail','none'].map(m => `<option value="${m}" ${(a?.client_profile || 'outlook') === m ? 'selected' : ''}>${m}</option>`).join('')}
+        </select></div>
+        <div class="field grow"><label>failover to another account</label><select id="s_failover">
+          <option value="1" ${a?.failover !== 0 ? 'selected' : ''}>on</option>
+          <option value="0" ${a?.failover === 0 ? 'selected' : ''}>off</option>
+        </select></div>
+      </div>
+
+      <h3 style="margin-top:18px">SPF / DMARC alignment</h3>
+      <div class="row">
+        <div class="field grow"><label>envelope sender (blank = from address)</label><input id="s_envelope" value="${esc(a?.envelope_from || '')}" placeholder="bounce@yourdomain.com"></div>
+        <div class="field grow"><label>reply-to (blank = from address)</label><input id="s_replyto" value="${esc(a?.reply_to || '')}" placeholder="you@yourdomain.com"></div>
+      </div>
+      <div class="dim small">SPF is checked on the envelope domain and DMARC needs it aligned with From. Keep both on the domain your SMTP relay is authorised to send for.</div>
+
+      <h3 style="margin-top:18px">DKIM signing</h3>
+      <div class="dim small mb">Signing with your own domain is the single biggest inbox-placement win. Generate a key here, publish the TXT record, then send to a Gmail account to confirm <span class="mono">dkim=pass</span>.</div>
+      <div class="row">
+        <div class="field grow"><label>dkim domain</label><input id="s_dkimdomain" value="${esc(a?.dkim_domain || '')}" placeholder="yourdomain.com"></div>
+        <div class="field grow"><label>selector</label><input id="s_dkimsel" value="${esc(a?.dkim_selector || 'mailforge')}" placeholder="mailforge"></div>
+      </div>
+      <label>private key (paste PEM, or generate below)</label>
+      <textarea id="s_dkimkey" rows="3" placeholder="${a?.has_dkim ? 'a key is already stored — leave blank to keep it' : '-----BEGIN PRIVATE KEY-----'}"></textarea>
+      <div class="row">
+        <button onclick="smtpDkimGen(${isEdit ? a.id : 0})">generate keypair + show DNS</button>
+        ${a?.has_dkim ? `<button onclick="smtpDkimDns(${a.id})">show DNS record</button>` : ''}
+      </div>
+
       <div class="row mt">
         <button class="primary" onclick="smtpSave(${isEdit ? a.id : 0})">save</button>
         ${isEdit ? `<button onclick="smtpTestId(${a.id})">test connection</button>` : ''}
@@ -435,15 +470,44 @@ function smtpForm(a) {
       <div id="s_out" class="mt"></div>
     </div>`;
 }
+async function smtpDkimGen(id) {
+  const domain = $('#s_dkimdomain').value.trim();
+  const sel = $('#s_dkimsel').value.trim() || 'mailforge';
+  if (!domain) { $('#s_out').innerHTML = '<div class="err">enter the dkim domain first</div>'; return; }
+  if (!id) { $('#s_out').innerHTML = '<div class="err">save the account first, then generate a key for it</div>'; return; }
+  const r = await api('/api/smtp.php', { dkim_generate: 1, id, dkim_domain: domain, dkim_selector: sel }, 'POST');
+  if (r.ok && r.dns) {
+    $('#s_out').innerHTML = `<div class="card"><b>DNS record</b>
+      <div class="mono small mt">Type: TXT</div>
+      <div class="mono small">Name: ${esc(r.dns.name)}</div>
+      <div class="mono small" style="word-break:break-all">Value: ${esc(r.dns.value)}</div>
+      <div class="dim small mt">Add it at your DNS provider, wait for propagation, then send a test.</div></div>`;
+  } else { $('#s_out').innerHTML = `<div class="err">${esc(r.error || 'failed')}</div>`; }
+}
+async function smtpDkimDns(id) {
+  const r = await api('/api/smtp.php', { dkim_dns: 1, id }, 'POST');
+  if (r.ok && r.dns) {
+    $('#s_out').innerHTML = `<div class="card"><b>DNS record</b>
+      <div class="mono small mt">Name: ${esc(r.dns.name)}</div>
+      <div class="mono small" style="word-break:break-all">Value: ${esc(r.dns.value)}</div></div>`;
+  } else { $('#s_out').innerHTML = `<div class="err">${esc(r.error || 'failed')}</div>`; }
+}
 function smtpNew() { smtpForm(null); }
 function smtpEdit(id) { smtpForm(smtpCache.find(a => a.id === id)); }
 async function smtpSave(id) {
+  const tlsMode = $('#s_tlsmode').value || 'auto';
   const body = {
     id, name: $('#s_name').value.trim(), host: $('#s_host').value.trim(), port: +$('#s_port').value,
     username: $('#s_user').value, password: $('#s_pass').value,
     from_addr: $('#s_from').value.trim(), from_name: $('#s_fromname').value,
-    daily_quota: +$('#s_quota').value, use_tls: +$('#s_tls').value, active: +$('#s_active').value,
+    daily_quota: +$('#s_quota').value, active: +$('#s_active').value,
+    tls_mode: tlsMode, use_tls: tlsMode === 'none' ? 0 : 1,
+    client_profile: $('#s_profile').value, failover: +$('#s_failover').value,
+    envelope_from: $('#s_envelope').value.trim(), reply_to: $('#s_replyto').value.trim(),
+    dkim_domain: $('#s_dkimdomain').value.trim(), dkim_selector: $('#s_dkimsel').value.trim(),
   };
+  const dkimKey = $('#s_dkimkey').value.trim();
+  if (dkimKey !== '') body.dkim_private_key = dkimKey;
   if (body.password === '' && !id) body.password = '';
   const r = await api('/api/smtp.php', body, id ? 'PUT' : 'POST');
   if (r.ok) { toast('saved'); vSmtp(); } else $('#s_out').innerHTML = `<div class="err">${esc(r.error || 'failed')}</div>`;

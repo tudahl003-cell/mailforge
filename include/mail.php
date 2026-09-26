@@ -125,9 +125,10 @@ function run_campaign(int $id, array $opts = []): array {
         $acctUsed++;
 
         // 4) headers with deliverability defaults
+        $replyTo = trim((string)($acct['reply_to'] ?? ''));
+        if ($replyTo === '' || !preg_match('/@/', $replyTo)) $replyTo = $acct['from_addr'];
         $headers = [
-            'Reply-To' => $acct['from_addr'],
-            'X-Mailer' => '',   // blank is best
+            'Reply-To' => $replyTo,
         ];
         // List-Unsubscribe: optional (helps some ESPs, hurts others). Off by default.
         if (!empty($opts['unsubscribe'])) {
@@ -146,6 +147,23 @@ function run_campaign(int $id, array $opts = []): array {
             'headers' => array_filter($headers, fn($v) => $v !== null && $v !== ''),
         ];
         $r = smtp_send($acct, $msg);
+
+        // Failover: if a relay rejects us, retry through another pooled
+        // account before giving up on this recipient. A rejected RCPT or a
+        // dead relay is often account-specific, not address-specific.
+        $tried = [(int)$acct['id']];
+        $fails = 0;
+        while (!$r['ok'] && $fixed === null && !empty($acct['failover']) && $fails < 2) {
+            $fails++;
+            $alt = smtp_next_account($tried);
+            if ($alt === null) break;
+            $tried[] = (int)$alt['id'];
+            $acct = $alt;
+            $acctUsed++;
+            $msg['headers']['Reply-To'] = $alt['from_addr'];
+            $r = smtp_send($alt, $msg);
+            $r['failover_attempts'] = $fails;
+        }
 
         if ($r['ok']) {
             $sent++;
