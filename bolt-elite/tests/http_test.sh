@@ -52,6 +52,9 @@ echo; echo "unknown paths"
 ok "$(curl -s -o /dev/null -w '%{http_code}' $B/does-not-exist)" "404" "unknown slug -> 404"
 ok "$(curl -s -o /dev/null -w '%{http_code}' $B/admin)" "200" "admin shell served"
 has "$(curl -s $B/admin)" 'app.js' "admin loads the SPA bundle"
+ok "$(curl -s -o /dev/null -w '%{http_code}' $B/static/style.css)" "200" "admin css served"
+ok "$(curl -s -o /dev/null -w '%{http_code}' $B/static/app.js)" "200" "admin js served"
+ok "$(curl -s -o /dev/null -w '%{http_code}' $B/static/../lib.php)" "403" "no path traversal via static"
 
 echo; echo "analytics"
 S=$(curl -s -H "X-Admin-Token: $TOK" "$B/api/stats")
