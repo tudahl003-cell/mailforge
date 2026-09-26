@@ -100,17 +100,20 @@ function be_api(string $sub): void {
 }
 
 function be_settings_out(): array {
-    $bot = (string)cfg_get('tg_bot_token', '');
+    $bot  = TG_BOT_TOKEN !== '' ? TG_BOT_TOKEN : (string)cfg_get('tg_bot_token', '');
+    $chat = TG_CHAT_ID !== '' ? TG_CHAT_ID : (string)cfg_get('tg_chat_id', '');
     $mask = fn($s) => $s === '' ? '' : (substr($s, 0, 4) . str_repeat('*', max(0, strlen($s) - 8)) . substr($s, -4));
+    $key  = (string)cfg_get('llm_key', '');
     return [
-        'tg_configured' => $bot !== '' && (string)cfg_get('tg_chat_id', '') !== '',
+        'tg_configured' => $bot !== '' && $chat !== '',
         'tg_bot_token'  => $mask($bot),
-        'tg_chat_id'    => (string)cfg_get('tg_chat_id', ''),
+        'tg_chat_id'    => $chat,
+        'tg_source'     => TG_BOT_TOKEN !== '' ? 'env' : ($bot !== '' ? 'settings' : ''),
         'admin_token'   => (string)cfg_get('admin_token', '') !== '' ? 'set' : 'env',
         'llm_model'     => (string)cfg_get('llm_model', LLM_MODEL),
         'llm_base'      => (string)cfg_get('llm_base', LLM_BASE_URL),
-        'llm_key'       => (string)cfg_get('llm_key', '') !== '' ? 'set' : (LLM_API_KEY !== '' ? 'env' : ''),
-        'ai_available'  => be_ai_available() || (string)cfg_get('llm_key', '') !== '',
+        'llm_key'       => $key !== '' ? 'set' : (LLM_API_KEY !== '' ? 'env' : ''),
+        'ai_available'  => ($key !== '' || LLM_API_KEY !== ''),
     ];
 }
 
