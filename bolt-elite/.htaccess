@@ -1,0 +1,18 @@
+RewriteEngine On
+RewriteBase /
+
+# Never expose app internals or the SQLite store.
+RewriteRule ^(data|include|tests|lib\.php|audit\.py|Dockerfile|entrypoint\.sh|README\.md) - [F,L]
+
+# Real files (static assets) are served directly by Apache.
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^ - [L]
+
+# Everything else goes to the front controller.
+RewriteRule ^ index.php [L]
+
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+  Header set X-Frame-Options "SAMEORIGIN"
+  Header set Referrer-Policy "no-referrer-when-downgrade"
+</IfModule>
