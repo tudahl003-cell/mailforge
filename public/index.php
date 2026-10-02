@@ -32,6 +32,7 @@ $token = effective_admin_token();
   </aside>
 
   <main id="main">
+    <div id="scrim" class="scrim hidden"></div>
     <!-- token gate -->
     <div id="tokenGate" class="gate hidden">
       <div class="gate-card">
@@ -46,6 +47,7 @@ $token = effective_admin_token();
 
     <div id="views" class="hidden">
       <header class="topbar">
+        <button id="menuBtn" class="menu-btn" type="button" aria-label="Open menu">&#9776;</button>
         <h2 id="viewTitle">Dashboard</h2>
         <div class="topbar-right" id="topbarRight"></div>
       </header>

@@ -57,7 +57,14 @@ function setView(v) {
   ({ dashboard: vDash, campaigns: vCamp, compose: vCompose, verify: vVerify, smtp: vSmtp, links: vLinks, logs: vLogs, settings: vSettings }[v] || vDash)();
 }
 function boot() {
-  document.querySelectorAll('#nav a').forEach(a => a.onclick = () => setView(a.dataset.view));
+  document.querySelectorAll('#nav a').forEach(a => a.onclick = () => { setView(a.dataset.view); closeNav(); });
+  // mobile drawer
+  const side = document.querySelector('.side'), menuBtn = $('#menuBtn'), scrim = $('#scrim');
+  const openNav = () => { side.classList.add('open'); if (scrim) { scrim.classList.remove('hidden'); requestAnimationFrame(() => scrim.classList.add('show')); } };
+  window.closeNav = () => { if (side) side.classList.remove('open'); if (scrim) { scrim.classList.remove('show'); scrim.classList.add('hidden'); } };
+  if (menuBtn) menuBtn.onclick = () => (side.classList.contains('open') ? closeNav() : openNav());
+  if (scrim) scrim.onclick = closeNav;
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNav(); });
   setView('dashboard');
 }
 
